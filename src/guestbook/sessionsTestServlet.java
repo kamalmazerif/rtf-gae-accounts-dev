@@ -1,5 +1,11 @@
 package guestbook;
 
+import guestbook.login.AuthProviderAccount;
+import guestbook.login.LoginManager;
+import guestbook.login.LoginType;
+import guestbook.login.RTFAccount;
+import guestbook.login.RTFAccountException;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -8,6 +14,7 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -43,78 +50,86 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class sessionsTestServlet extends HttpServlet {
 
-  private static final Logger log = Logger.getLogger(FacebookReturnServlet.class.getName());
+  private static final Logger log = Logger.getLogger(new Object() {
+  }.getClass().getEnclosingClass().getName());
 
   // Facebook redirects user back to us after auth
 
-
   @Override
   protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-  
+
     HttpSession session = req.getSession();
     PrintWriter outWriter = resp.getWriter();
-  
+
     Document doc = Document.createShell("");
     writeStartOverLink(doc);
     doc.body().appendText("Handling GET - This is the document body").appendElement("br");
-  
+
     writeDebugInfo(req, doc);
-  
-    HashMap<String, String> loginCommonNameDescriptions = LoginManager.getLoginCommonNameDescriptions(req.getSession());
-    Set<String> loginNames = loginCommonNameDescriptions.keySet();
-    
-    
-    // Drawing should come after action handling...
-    if (!loginNames.contains(LoginType.GOOGLE.getName())) {
+
+    RTFAccount currentLogin = LoginManager.getCurrentLogin(session);
+    if (currentLogin == null) {
       writeGoogleLoginButton(doc);
-    }
-    
-    if (!loginNames.contains(LoginType.FACEBOOK.getName())) {
       writeFacebookLoginButton(doc);
-    } 
-    
-    if (!loginNames.contains(LoginType.TWITTER.getName())) {
       writeTwitterLoginButton(doc);
+    } else {
+
+      // Drawing should come after action handling...
+      if (!currentLogin.isLoggedInAPType(LoginType.GOOGLE)) {
+        writeGoogleLoginButton(doc);
+      }
+
+      if (!currentLogin.isLoggedInAPType(LoginType.FACEBOOK)) {
+        writeFacebookLoginButton(doc);
+      }
+
+      if (!currentLogin.isLoggedInAPType(LoginType.TWITTER)) {
+        writeTwitterLoginButton(doc);
+      }
     }
-  
-    
-    
+
     String paramRTFAction = req.getParameter("RTFAction");
     if ("UserReqGoogleAuth".equals(paramRTFAction)) {
       actionUserGoogleAuthStart(req, resp, doc);
     }
-  
+
     if ("UserReqFacebookAuth".equals(paramRTFAction)) {
       actionUserFacebookCustomAuthStart(req, doc);
     }
-  
+
     if ("UserReqFacebookAuthScribe".equals(paramRTFAction)) {
       actionUserFacebookScribeAuthStart(req, resp);
     }
-  
+
     if ("UserReqTwitterAuth".equals(paramRTFAction)) {
       actionUserTwitterAuthStart(resp);
     }
-  
+
     if ("CallbackGoogleUserAuth".equals(paramRTFAction)) {
       actionCallbackGoogleAuthScribe(req, resp, doc);
     }
-  
+
     if ("CallbackFacebookUserAuth".equals(paramRTFAction)) {
       actionCallbackFacebookAuthScribe(req, resp, doc);
     }
-  
+
     if ("CallbackTwitterUserAuth".equals(paramRTFAction)) {
       actionCallbackTwitterAuth(req, resp, doc);
     }
-    
+
     if ("logout".equals(paramRTFAction)) {
       LoginManager.logOutUser(session);
       resp.sendRedirect(RTFServletConfig.PATH_HOME);
     }
-  
-    writeForm(doc);
-  
+
+    if ("destroyAccount".equals(paramRTFAction)) {
+      LoginManager.destroyRTFAccount(session);
+      LoginManager.logOutUser(session);
+      resp.sendRedirect(RTFServletConfig.PATH_HOME);
+    }
+
+    //writeForm(doc);
+
     doc.body().appendText("Done");
     outWriter.write(doc.toString());
   }
@@ -158,7 +173,7 @@ public class sessionsTestServlet extends HttpServlet {
     Token requestToken = service.getRequestToken();
     req.getSession().setAttribute("requestToken", requestToken.getToken());
     req.getSession().setAttribute("requestTokenSecret", requestToken.getSecret());
-    
+
     resp.sendRedirect("https://www.google.com/accounts/OAuthAuthorizeToken?oauth_token=" + requestToken.getToken());
 
   }
@@ -166,7 +181,8 @@ public class sessionsTestServlet extends HttpServlet {
   private void actionUserFacebookScribeAuthStart(HttpServletRequest req, HttpServletResponse resp) throws IOException {
     // Attempt to implement Facebook with scribe
     OAuthService service = new ServiceBuilder().provider(FacebookApi.class).apiKey(RTFServletConfig.FACEBOOK_ID)
-        .apiSecret(RTFServletConfig.FACEBOOK_SECRET).callback(RTFServletConfig.FACEBOOK_USER_AUTH_SCRIBE_CALLBACK_URL).build();
+        .apiSecret(RTFServletConfig.FACEBOOK_SECRET).callback(RTFServletConfig.FACEBOOK_USER_AUTH_SCRIBE_CALLBACK_URL)
+        .build();
     // Scanner in = new Scanner(System.in);
 
     // Obtain the Authorization URL
@@ -198,18 +214,19 @@ public class sessionsTestServlet extends HttpServlet {
     resp.sendRedirect(authUrl);
   }
 
-  private void actionCallbackGoogleAuthScribe(HttpServletRequest req, HttpServletResponse resp, Document doc) throws JsonProcessingException, IOException {
+  private void actionCallbackGoogleAuthScribe(HttpServletRequest req, HttpServletResponse resp, Document doc)
+      throws JsonProcessingException, IOException {
     String paramToken = req.getParameter("oauth_token");
     String paramVerifier = req.getParameter("oauth_verifier");
 
     Verifier verifier = new Verifier(paramVerifier);
 
     OAuthRequest request = new OAuthRequest(Verb.GET, "https://www.googleapis.com/oauth2/v2/userinfo");
-    
+
     OAuthService service = new ServiceBuilder().provider(GoogleApi.class).apiKey(RTFServletConfig.GOOGLE_API_KEY)
         .apiSecret(RTFServletConfig.GOOGLE_API_SECRET).callback(RTFServletConfig.GOOGLE_USER_AUTH_CALLBACK_URL)
         .scope(RTFServletConfig.GOOGLE_OAUTH_REQ_SCOPE).build();
-    
+
     String reqToken = (String) req.getSession().getAttribute("requestToken");
     String reqTokenSecret = (String) req.getSession().getAttribute("requestTokenSecret");
     Token requestToken = new Token(reqToken, reqTokenSecret);
@@ -217,34 +234,47 @@ public class sessionsTestServlet extends HttpServlet {
     service.signRequest(accessToken, request);
     request.addHeader("GData-Version", "3.0");
     Response response = request.send();
+    log.info(response.getCode() + "\r\n" + response.getBody());
 
-    log.info(response.getCode() +"\r\n"+ response.getBody());
-    String responseBody = response.getBody();
+    LoginType loginType = LoginType.GOOGLE;
+    AuthProviderAccount newProviderAcct = new AuthProviderAccount(response.getBody(), loginType);
+    try {
+      LoginManager.authProviderLoginAccomplished(req.getSession(), loginType, newProviderAcct);
+      // Can log something here with this, descriptive info should go here once we stop dumping APAccount to log
+      String idStr = newProviderAcct.getProperty(AuthProviderAccount.AUTH_PROVIDER_ID);
+      String name = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_PERSON_NAME);
+      String email = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_EMAIL);
+      String picUrl = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_PICTURE_URL);
+      log.info("Login Success with:" + loginType.getName());
+      resp.sendRedirect(RTFServletConfig.PATH_HOME);
+    } catch (RTFAccountException e) {
+      e.printStackTrace();
+      writeAccountConflictMessage(doc, e);
+    }
 
-    ObjectMapper m = new ObjectMapper();
-    JsonNode rootNode = m.readTree(response.getBody());
-    String id = rootNode.path("sub").textValue();
-    String name = rootNode.path("name").textValue();
-    String email = rootNode.path("email").textValue();
-    String picUrl = rootNode.path("picture").textValue();
-    
-    doc.body().appendElement("img").attr("src",picUrl);
-    doc.body().appendText("Got Google ID: " + id + " name: " + name + " email: " + email).appendElement("br");
-    
-    HashMap<String, String> googleLoginHash = new HashMap<String, String>();
-    googleLoginHash.put(RTFConstants.LOGIN_ID, id);
-    googleLoginHash.put(RTFConstants.LOGIN_EMAIL, email);
-    googleLoginHash.put(RTFConstants.LOGIN_PERSON_NAME, name);
-    LoginManager.addLoginType(req.getSession(), LoginType.GOOGLE, googleLoginHash);
-    resp.sendRedirect(RTFServletConfig.PATH_HOME);
   }
 
-  private void actionCallbackFacebookAuthScribe(HttpServletRequest req, HttpServletResponse resp, Document doc) throws IOException,
-      JsonProcessingException {
+  private void writeAccountConflictMessage(Document doc, RTFAccountException e) {
+    long originalRTFAcctId = e.getOriginalOwner().getRTFAccountId();
+    long contestorRTFAcctId = e.getNewClaimant().getRTFAccountId();
+    String apName = e.getContestedAPAccount().getProperty(AuthProviderAccount.AUTH_PROVIDER_NAME);
+    String apDetails = e.getContestedAPAccount().getDescription();
+    
+    doc.body().appendElement("h2").appendText("Account Ownership Conflict").appendElement("br");
+    doc.body().appendText("The "+ apName + " account you are trying to add to your RateThisFest account ID "+ contestorRTFAcctId +
+        " is already being used by another RateThisFest user ID "+ originalRTFAcctId + ".").appendElement("br").appendElement("br");
+    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME).appendText("Back To Home Page").appendElement("br");
+   
+    
+  }
+
+  private void actionCallbackFacebookAuthScribe(HttpServletRequest req, HttpServletResponse resp, Document doc)
+      throws IOException, JsonProcessingException {
 
     // Facebook user auth has returned
     OAuthService service = new ServiceBuilder().provider(FacebookApi.class).apiKey(RTFServletConfig.FACEBOOK_ID)
-        .apiSecret(RTFServletConfig.FACEBOOK_SECRET).callback(RTFServletConfig.FACEBOOK_USER_AUTH_SCRIBE_CALLBACK_URL).build();
+        .apiSecret(RTFServletConfig.FACEBOOK_SECRET).callback(RTFServletConfig.FACEBOOK_USER_AUTH_SCRIBE_CALLBACK_URL)
+        .build();
     // OAuthService service = (OAuthService)req.getSession().getAttribute("scribeservice");
     // String authorizationUrl = service.getAuthorizationUrl(null);
 
@@ -259,27 +289,28 @@ public class sessionsTestServlet extends HttpServlet {
     service.signRequest(accessToken, request);
     Response response = request.send();
     int responseCode = response.getCode();
-    String responseBody = response.getBody();
+    log.info("Response Body: " + response.getBody());
 
-    ObjectMapper m = new ObjectMapper();
-    JsonNode rootNode = m.readTree(response.getBody());
-    String id = rootNode.path("id").textValue();
-    String name = rootNode.path("name").textValue();
-    String email = rootNode.path("email").textValue();
+    LoginType loginType = LoginType.FACEBOOK;
+    AuthProviderAccount newProviderAcct = new AuthProviderAccount(response.getBody(), loginType);
+    try {
+      LoginManager.authProviderLoginAccomplished(req.getSession(), loginType, newProviderAcct);
+      // Can log something here with this, descriptive info should go here once we stop dumping APAccount to log
+      String id = newProviderAcct.getProperty(AuthProviderAccount.AUTH_PROVIDER_ID);
+      String name = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_PERSON_NAME);
+      String email = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_EMAIL);
+      
+      // doc.body().appendText("Got Facebook ID: " + id + " name: " + name + " email: " + email);
+      resp.sendRedirect(RTFServletConfig.PATH_HOME);
+    } catch (RTFAccountException e) {
+      e.printStackTrace();
+      writeAccountConflictMessage(doc, e);
+    }
 
-    doc.body().appendText("Got Facebook ID: " + id + " name: " + name + " email: " + email);
-    log.info("Response Body: " + responseBody);
-    
-    HashMap<String, String> facebookLoginHash = new HashMap<String, String>();
-    facebookLoginHash.put(RTFConstants.LOGIN_ID, id);
-    facebookLoginHash.put(RTFConstants.LOGIN_EMAIL, email);
-    facebookLoginHash.put(RTFConstants.LOGIN_PERSON_NAME, name);
-    LoginManager.addLoginType(req.getSession(), LoginType.FACEBOOK, facebookLoginHash);
-    resp.sendRedirect(RTFServletConfig.PATH_HOME);
   }
 
-  private void actionCallbackTwitterAuth(HttpServletRequest req, HttpServletResponse resp, Document doc) throws IOException,
-      JsonProcessingException {
+  private void actionCallbackTwitterAuth(HttpServletRequest req, HttpServletResponse resp, Document doc)
+      throws IOException, JsonProcessingException {
     // User approved/cancelled twitter authorization of RateThisFest
     Token token = new Token(req.getParameter("oauth_token"), req.getParameter("oauth_verifier"));
     Verifier verifier = new Verifier(req.getParameter("oauth_verifier"));
@@ -291,37 +322,37 @@ public class sessionsTestServlet extends HttpServlet {
     OAuthRequest request = new OAuthRequest(Verb.GET, "https://api.twitter.com/1.1/account/verify_credentials.json");
     service.signRequest(accessToken, request); // the access token from step 4
     Response response = request.send();
-    String responseBody = response.getBody();
+    log.info(response.getBody());
 
-    ObjectMapper m = new ObjectMapper();
-    JsonNode rootNode = m.readTree(response.getBody());
-    String id = rootNode.path("id_str").textValue();
-    String name = rootNode.path("name").textValue();
-    String twitterName = rootNode.path("screen_name").textValue();
+    LoginType loginType = LoginType.TWITTER;
+    AuthProviderAccount newProviderAcct = new AuthProviderAccount(response.getBody(), loginType);
+    try {
+      LoginManager.authProviderLoginAccomplished(req.getSession(), loginType, newProviderAcct);
+      // Can log something here with this, descriptive info should go here once we stop dumping APAccount to log
+      String id = newProviderAcct.getProperty(AuthProviderAccount.AUTH_PROVIDER_ID);
+      String name = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_PERSON_NAME);
+      String twitterName = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_SCREEN_NAME);
+      resp.sendRedirect(RTFServletConfig.PATH_HOME);
+    } catch (RTFAccountException e) {
+      e.printStackTrace();
+      writeAccountConflictMessage(doc, e);
+    }
 
-    doc.body().appendText("Got twitter id: " + id + " name: " + name + " Twitter Handle: " + twitterName)
-        .appendElement("br");
-
-    log.info(responseBody);
-    
-    HashMap<String, String> twitterLoginHash = new HashMap<String, String>();
-    twitterLoginHash.put(RTFConstants.LOGIN_ID, id);
-    twitterLoginHash.put(RTFConstants.LOGIN_SCREEN_NAME, twitterName);
-    twitterLoginHash.put(RTFConstants.LOGIN_PERSON_NAME, name);
-    LoginManager.addLoginType(req.getSession(), LoginType.TWITTER, twitterLoginHash);
-    resp.sendRedirect(RTFServletConfig.PATH_HOME);
   }
 
   private void writeStartOverLink(Document doc) {
-    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME).appendText("Home Page")
-    .appendElement("br");    
-    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME +"?RTFAction=logout").appendText("Wipe Login Data")
-    .appendElement("br");
+    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME).appendText("Home Page").appendElement("br");
+    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME + "?RTFAction=logout")
+        .appendText("Wipe Login Data").appendElement("br");
+    doc.body().appendElement("br").appendElement("a")
+        .attr("href", RTFServletConfig.PATH_HOME + "?RTFAction=destroyAccount").attr("align", "right")
+        .appendText("DESTROY MY RateThisFest ACCOUNT").appendElement("br");
   }
 
   private void writeForm(Document doc) {
     // <form action="/sign" method="post">
-    Element formElement = doc.body().appendElement("form").attr("action", RTFServletConfig.PATH_HOME).attr("method", "post");
+    Element formElement = doc.body().appendElement("form").attr("action", RTFServletConfig.PATH_HOME)
+        .attr("method", "post");
 
     // <div><textarea name="content" rows="3" cols="60"></textarea></div>
     formElement.appendElement("div").appendElement("textarea").attr("name", "content").attr("rows", "3")
@@ -347,14 +378,14 @@ public class sessionsTestServlet extends HttpServlet {
 
   private void writeFacebookLoginButton(Document doc) {
     String urlToUseWhenYouClickOnTheFacebookButton = RTFServletConfig.FACEBOOK_USER_AUTH_SCRIBE_START_URL;
-  
+
     doc.body().appendElement("A").attr("href", urlToUseWhenYouClickOnTheFacebookButton).appendElement("img")
         .attr("src", "http://dragon.ak.fbcdn.net/hphotos-ak-ash3/851558_153968161448238_508278025_n.png")
         .attr("border", "0").appendElement("br");
   }
 
   private void writeTwitterLoginButton(Document doc) {
-    String urlToUse = RTFServletConfig.PATH_HOME+ "?RTFAction=UserReqTwitterAuth";
+    String urlToUse = RTFServletConfig.PATH_HOME + "?RTFAction=UserReqTwitterAuth";
     doc.body()
         .appendElement("A")
         .attr("href", urlToUse)
@@ -403,19 +434,18 @@ public class sessionsTestServlet extends HttpServlet {
       }
       doc.body().appendText(parameter + " = " + parameters.get(parameter)[0]).appendElement("br");
     }
-    
-    HashMap<String, String> loginCommonNameDescriptions = LoginManager.getLoginCommonNameDescriptions(session);
-    if (!loginCommonNameDescriptions.isEmpty()) {
-      doc.body().appendText("Active Login Types:").appendElement("br");
-      
-      
-      
-      Set<String> keySet = loginCommonNameDescriptions.keySet();
-      ArrayList<String> loginTypeList = new ArrayList<String>(keySet);
-      Collections.sort(loginTypeList);
-      for (String loginTypeName : loginTypeList) {
-        String loginTypeDescription = loginCommonNameDescriptions.get(loginTypeName);
-        doc.body().appendText(loginTypeName +": "+loginTypeDescription).appendElement("br");
+
+    RTFAccount currentLogin = LoginManager.getCurrentLogin(session);
+    if (currentLogin != null) {
+      long rtfAccountId = currentLogin.getRTFAccountId();
+      doc.body().appendText("Logged in as RateThisFest Account#: " + rtfAccountId).appendElement("br");
+
+      Collection<AuthProviderAccount> providerAccounts = currentLogin.getAPAccounts();
+      for (AuthProviderAccount apAccount : providerAccounts) {
+        doc.body()
+            .appendText(
+                apAccount.getProperty(AuthProviderAccount.AUTH_PROVIDER_NAME) + ": " + apAccount.getDescription())
+            .appendElement("br");
       }
     }
 
@@ -429,7 +459,5 @@ public class sessionsTestServlet extends HttpServlet {
     }
     doc.body().appendElement("hr");
   }
-  
 
-  
 }

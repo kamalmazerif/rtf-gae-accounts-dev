@@ -1,4 +1,4 @@
-package guestbook;
+package guestbook.login;
 
 public enum LoginType {
   FACEBOOK("Facebook"), GOOGLE("Google"), TWITTER("Twitter");
@@ -19,5 +19,9 @@ public enum LoginType {
       }
     }
     return null;
+  }
+  
+  public boolean equals(LoginType loginType) {
+      return _typeName.equals(loginType.getName());
   }
 }
