@@ -26,6 +26,11 @@ public class RTFServletConfig {
   public static final String TWITTER_SECRET = "rdYvdK4g3ckWVdnvzmAj6JXmj9RoI05rIb4nVYQsoI"; // Server applications ONLY
   public static final String TWITTER_REQ_TOKEN_URL = "https://api.twitter.com/oauth/request_token";
   public static final String TWITTER_REDIRECT_URL = "http://te-s-t.appspot.com/sessionsTest?RTFAction=CallbackTwitterUserAuth";
+  
   public static final String PATH_HOME = "/sessionsTest";
+  
+  public static final String IMAGE_URL_SIGNIN_GOOGLE = "https://developers.google.com/accounts/images/sign-in-with-google.png";
+  public static final String IMAGE_URL_SIGNIN_FACEBOOK = "http://dragon.ak.fbcdn.net/hphotos-ak-ash3/851558_153968161448238_508278025_n.png";
+  public static final String IMAGE_URL_SIGNIN_TWITTER = "https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcSdYJnRQqyWHMkm9VgP_aHf0gc4wbREFiv0z72T_xVltn4vNWb9NA";
 
 }

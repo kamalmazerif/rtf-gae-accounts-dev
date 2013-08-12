@@ -41,23 +41,25 @@ public class LoginManager {
       RTFAccountToLoginOrUpdate = ownerOfAddedAPAccount; // Assign AP account owner from datastore, might be null
       if (ownerOfAddedAPAccount == null) { // if it is not in datastore either
         RTFAccountToLoginOrUpdate = RTFAccount.createNewRTFAccount(); // Create a new one for the brand new user
+        String personName = newAPAccountLogin.getProperty(AuthProviderAccount.LOGIN_PERSON_NAME);
+        RTFAccountToLoginOrUpdate.setProperty(RTFAccount.PROPERTY_PERSON_NAME, personName);
       }
     } else {
       // Session is already logged in
-      if (ownerOfAddedAPAccount != null && currentSessionLogin.getRTFAccountId() != ownerOfAddedAPAccount.getRTFAccountId()) {
+      if (ownerOfAddedAPAccount != null && currentSessionLogin.getAppEngineKeyLong() != ownerOfAddedAPAccount.getAppEngineKeyLong()) {
         String newAPTypeName = newAPAccountLogin.getProperty(AuthProviderAccount.AUTH_PROVIDER_NAME);
         String newAPDescription = newAPAccountLogin.getDescription();
 
         log.info("Auth Provider Account ownership conflict: " + newAPTypeName + " account " + newAPDescription
-            + " is already owned by RTF Account:" + ownerOfAddedAPAccount.getRTFAccountId()
-            + " but user attempted to add it to RTF Account:" + currentSessionLogin.getRTFAccountId());
+            + " is already owned by RTF Account:" + ownerOfAddedAPAccount.getAppEngineKeyLong()
+            + " but user attempted to add it to RTF Account:" + currentSessionLogin.getAppEngineKeyLong());
         RTFAccountException ex = new RTFAccountException(currentSessionLogin, ownerOfAddedAPAccount, newAPAccountLogin);
         throw ex;  //Before anything gets modified
       }
       RTFAccountToLoginOrUpdate = currentSessionLogin;
     }
 
-    long rtfAccountId = RTFAccountToLoginOrUpdate.getRTFAccountId();
+    long rtfAccountId = RTFAccountToLoginOrUpdate.getAppEngineKeyLong();
     String apAccountProviderName = newAPAccountLogin.getProperty(AuthProviderAccount.AUTH_PROVIDER_NAME);
     String apAccountID = newAPAccountLogin.getProperty(AuthProviderAccount.AUTH_PROVIDER_ID);
 
@@ -148,7 +150,7 @@ public class LoginManager {
       return;
     }
 
-    long rtfAccountId = currentRTFAccountLoggedIn.getRTFAccountId();
+    long rtfAccountId = currentRTFAccountLoggedIn.getAppEngineKeyLong();
     log.info("Destroying RTF Account ID=" + rtfAccountId);
 
     // Query RTFAccounts for all id's matching account ID

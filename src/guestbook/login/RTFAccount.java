@@ -16,15 +16,22 @@ import com.google.appengine.api.datastore.Entity;
 import com.google.appengine.api.datastore.Key;
 import com.google.appengine.api.datastore.KeyFactory;
 import com.google.appengine.api.datastore.KeyRange;
+import com.google.appengine.api.datastore.PreparedQuery;
+import com.google.appengine.api.datastore.Query;
+import com.google.appengine.api.datastore.Query.Filter;
+import com.google.appengine.api.datastore.Query.FilterOperator;
+import com.google.appengine.api.datastore.Query.FilterPredicate;
 
 public class RTFAccount implements Serializable {
   private static final long serialVersionUID = 1L;
   public static final String LOGIN_HTTPSESSION_ATTRIBUTE = "LOGIN_HTTPSESSION_ATTRIBUTE";
+  public static final String APPENGINE_KEY_LONG = "APPENGINE_KEY_LONG";
   public static final String DATASTORE_KIND = "RTFAccount";
   public static final String DATASTORE_ANCESTOR_ID = "AccountAncestor";
+  public static final String PROPERTY_PERSON_NAME = "PROPERTY_PERSON_NAME";
 
-  private long _id;
   private HashMap<String, AuthProviderAccount> _accounts;
+  private HashMap<String, String> _masterAccountProperties = new HashMap<String, String>();
   private static Key _accountAncestorKey;
   
   private static final Logger log = Logger.getLogger(new Object() { }.getClass().getEnclosingClass().getName());
@@ -38,9 +45,51 @@ public class RTFAccount implements Serializable {
   }
 
   private RTFAccount(Key useKey) {
-    _id = useKey.getId();
-    //TODO must populate accounts here
-    _accounts = AuthProviderAccount.loadAPAccountsByParentID(_id+"");
+    _masterAccountProperties.put(APPENGINE_KEY_LONG, useKey.getId()+"");
+    loadFromDataStore();
+    _accounts = AuthProviderAccount.loadAPAccountsByParentID(getAppEngineKeyLong()+"");
+  }
+  
+  private void loadFromDataStore() {  //Assumes appengine key already set in hashmap
+    DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
+    Filter keyFilter = new FilterPredicate(Entity.KEY_RESERVED_PROPERTY, FilterOperator.EQUAL, KeyFactory.createKey(DATASTORE_KIND, this.getAppEngineKeyLong()));
+    Query q = new Query(DATASTORE_KIND).setFilter(keyFilter);
+    PreparedQuery pq = datastore.prepare(q);
+    
+    for (Entity result : pq.asIterable()) {
+      StringBuilder resultBuilder = new StringBuilder();
+      for (String propertyName : result.getProperties().keySet()) {
+        Object propValue = result.getProperty(propertyName);
+        String valueStr;
+        if (propValue != null) {
+           valueStr = propValue.toString();
+        } else {
+          valueStr = "null";
+        }
+        _masterAccountProperties.put(propertyName, (String)propValue);
+        resultBuilder.append(propertyName + "=" + valueStr + " ");
+      }
+      log.info(resultBuilder.toString());
+    }
+  }
+  
+  private void saveToDataStore() {
+    DatastoreService datastore = DatastoreServiceFactory.getDatastoreService();
+    Entity rtfAccountAncestor = new Entity(RTFConstants.DATASTORE_KIND_ANCESTOR, DATASTORE_ANCESTOR_ID);
+    
+    Entity thisObject = new Entity(DATASTORE_KIND, getAppEngineKeyLong(), getAncestorKey());
+     
+    for (String propertyName : _masterAccountProperties.keySet()) {
+      String propertyValue = _masterAccountProperties.get(propertyName);
+      
+      if (propertyName.equals(APPENGINE_KEY_LONG)) {
+        //No need to save this to datastore - same as the datastore ID value
+      } else {
+        thisObject.setProperty(propertyName, propertyValue);        
+      }
+    }
+    
+    datastore.put(thisObject);
   }
 
   public static Key getAncestorKey() {
@@ -76,8 +125,8 @@ public class RTFAccount implements Serializable {
     return KeyFactory.createKey(getAncestorKey(), DATASTORE_KIND, idToLookup);
   }
 
-  public long getRTFAccountId() {
-    return _id;
+  public long getAppEngineKeyLong() {
+    return Long.valueOf(_masterAccountProperties.get(APPENGINE_KEY_LONG));
   }
 
   public void addAPAccount(AuthProviderAccount apAccount) {
@@ -86,7 +135,7 @@ public class RTFAccount implements Serializable {
     }
 
     _accounts.put(apAccount.getProperty(AuthProviderAccount.AUTH_PROVIDER_NAME), apAccount);
-    apAccount.setProperty(AuthProviderAccount.RTFACCOUNT_OWNER_KEY, _id + "");
+    apAccount.setProperty(AuthProviderAccount.RTFACCOUNT_OWNER_KEY, this.getAppEngineKeyLong()+"");
   }
 
   public void updateAPAccount(AuthProviderAccount newAPAccountObj) {
@@ -94,7 +143,7 @@ public class RTFAccount implements Serializable {
     
     AuthProviderAccount oldAPAccountObj = _accounts.get(authProviderName);
     oldAPAccountObj.copyDataTo(newAPAccountObj);
-    oldAPAccountObj.setProperty(AuthProviderAccount.RTFACCOUNT_OWNER_KEY, _id+"");  //Forces save to db
+    oldAPAccountObj.setProperty(AuthProviderAccount.RTFACCOUNT_OWNER_KEY, this.getAppEngineKeyLong()+"");  //Forces save to db
     
     _accounts.put(authProviderName, newAPAccountObj);
   }
@@ -112,6 +161,15 @@ public class RTFAccount implements Serializable {
       }
     }
     return false;
+  }
+  
+  public String getProperty(String propertyName) {
+      return _masterAccountProperties.get(propertyName);
+  }
+  
+  public void setProperty(String propertyName, String propertyValue) {
+    _masterAccountProperties.put(propertyName, propertyValue);
+    this.saveToDataStore();
   }
 
 

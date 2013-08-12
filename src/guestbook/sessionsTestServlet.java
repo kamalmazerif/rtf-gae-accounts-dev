@@ -50,6 +50,30 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class sessionsTestServlet extends HttpServlet {
 
+  public static final String PARAM_NAME_RTFACTION = "RTFAction";
+
+  public static final String GOOGLE_PARAM_OAUTH_VERIFIER = "oauth_verifier";
+  public static final String GOOGLE_PARAM_OAUTH_TOKEN = "oauth_token";
+  public static final String GOOGLE_REDIRECT_URL_BASE = "https://www.google.com/accounts/OAuthAuthorizeToken";
+  public static final String GOOGLE_REDIRECT_REQUEST_TOKEN_SECRET = "requestTokenSecret";
+  public static final String GOOGLE_REDIRECT_REQUEST_TOKEN = "requestToken";
+
+  public static final String ACTION_DESTROY_ACCOUNT = "destroyAccount";
+  public static final String ACTION_LOGOUT = "logout";
+
+  public static final String ACTION_GOOGLE_AUTH = "UserReqGoogleAuth";
+  public static final String ACTION_FACEBOOK_AUTH_SCRIBE = "UserReqFacebookAuthScribe";
+  public static final String ACTION_FACEBOOK_AUTH = "UserReqFacebookAuth";
+  public static final String ACTION_TWITTER_AUTH = "UserReqTwitterAuth";
+
+  public static final String ACTION_CALLBACK_GOOGLE_AUTH = "CallbackGoogleUserAuth";
+  public static final String ACTION_CALLBACK_FACEBOOK_AUTH = "CallbackFacebookUserAuth";
+  public static final String ACTION_CALLBACK_TWITTER_AUTH = "CallbackTwitterUserAuth";
+
+  public static final String TWITTER_PROTECTED_URL_USERINFO = "https://api.twitter.com/1.1/account/verify_credentials.json";
+  public static final String FACEBOOK_PROTECTED_URL_USERINFO = "https://graph.facebook.com/me";
+  public static final String GOOGLE_PROTECTED_URL_USERINFO = "https://www.googleapis.com/oauth2/v2/userinfo";
+
   private static final Logger log = Logger.getLogger(new Object() {
   }.getClass().getEnclosingClass().getName());
 
@@ -88,47 +112,47 @@ public class sessionsTestServlet extends HttpServlet {
       }
     }
 
-    String paramRTFAction = req.getParameter("RTFAction");
-    if ("UserReqGoogleAuth".equals(paramRTFAction)) {
+    String paramRTFAction = req.getParameter(PARAM_NAME_RTFACTION);
+    if (ACTION_GOOGLE_AUTH.equals(paramRTFAction)) {
       actionUserGoogleAuthStart(req, resp, doc);
     }
 
-    if ("UserReqFacebookAuth".equals(paramRTFAction)) {
+    if (ACTION_FACEBOOK_AUTH.equals(paramRTFAction)) {
       actionUserFacebookCustomAuthStart(req, doc);
     }
 
-    if ("UserReqFacebookAuthScribe".equals(paramRTFAction)) {
+    if (ACTION_FACEBOOK_AUTH_SCRIBE.equals(paramRTFAction)) {
       actionUserFacebookScribeAuthStart(req, resp);
     }
 
-    if ("UserReqTwitterAuth".equals(paramRTFAction)) {
+    if (ACTION_TWITTER_AUTH.equals(paramRTFAction)) {
       actionUserTwitterAuthStart(resp);
     }
 
-    if ("CallbackGoogleUserAuth".equals(paramRTFAction)) {
+    if (ACTION_CALLBACK_GOOGLE_AUTH.equals(paramRTFAction)) {
       actionCallbackGoogleAuthScribe(req, resp, doc);
     }
 
-    if ("CallbackFacebookUserAuth".equals(paramRTFAction)) {
+    if (ACTION_CALLBACK_FACEBOOK_AUTH.equals(paramRTFAction)) {
       actionCallbackFacebookAuthScribe(req, resp, doc);
     }
 
-    if ("CallbackTwitterUserAuth".equals(paramRTFAction)) {
+    if (ACTION_CALLBACK_TWITTER_AUTH.equals(paramRTFAction)) {
       actionCallbackTwitterAuth(req, resp, doc);
     }
 
-    if ("logout".equals(paramRTFAction)) {
+    if (ACTION_LOGOUT.equals(paramRTFAction)) {
       LoginManager.logOutUser(session);
       resp.sendRedirect(RTFServletConfig.PATH_HOME);
     }
 
-    if ("destroyAccount".equals(paramRTFAction)) {
+    if (ACTION_DESTROY_ACCOUNT.equals(paramRTFAction)) {
       LoginManager.destroyRTFAccount(session);
       LoginManager.logOutUser(session);
       resp.sendRedirect(RTFServletConfig.PATH_HOME);
     }
 
-    //writeForm(doc);
+    // writeForm(doc);
 
     doc.body().appendText("Done");
     outWriter.write(doc.toString());
@@ -165,17 +189,22 @@ public class sessionsTestServlet extends HttpServlet {
   private void actionUserGoogleAuthStart(HttpServletRequest req, HttpServletResponse resp, Document doc)
       throws IOException {
 
+    String redirectUrl = libraryActionGoogleAuthStart(req, resp);
+    resp.sendRedirect(redirectUrl);
+  }
+
+  private String libraryActionGoogleAuthStart(HttpServletRequest req, HttpServletResponse resp) throws IOException {
     OAuthService service = new ServiceBuilder().provider(GoogleApi.class).apiKey(RTFServletConfig.GOOGLE_API_KEY)
         .apiSecret(RTFServletConfig.GOOGLE_API_SECRET).callback(RTFServletConfig.GOOGLE_USER_AUTH_CALLBACK_URL)
         .scope(RTFServletConfig.GOOGLE_OAUTH_REQ_SCOPE).build();
 
     // Obtain the Request Token
     Token requestToken = service.getRequestToken();
-    req.getSession().setAttribute("requestToken", requestToken.getToken());
-    req.getSession().setAttribute("requestTokenSecret", requestToken.getSecret());
+    req.getSession().setAttribute(GOOGLE_REDIRECT_REQUEST_TOKEN, requestToken.getToken());
+    req.getSession().setAttribute(GOOGLE_REDIRECT_REQUEST_TOKEN_SECRET, requestToken.getSecret());
 
-    resp.sendRedirect("https://www.google.com/accounts/OAuthAuthorizeToken?oauth_token=" + requestToken.getToken());
-
+    String redirectUrl = GOOGLE_REDIRECT_URL_BASE + "?" + GOOGLE_PARAM_OAUTH_TOKEN + "=" + requestToken.getToken();
+    return redirectUrl;
   }
 
   private void actionUserFacebookScribeAuthStart(HttpServletRequest req, HttpServletResponse resp) throws IOException {
@@ -189,7 +218,7 @@ public class sessionsTestServlet extends HttpServlet {
     System.out.println("Fetching the Authorization URL...");
     String authorizationUrl = service.getAuthorizationUrl(null); // Dont need request token here
     log.info("Facebook User Auth URL: " + authorizationUrl);
-    req.getSession().setAttribute("sessionType", "mysession");
+
     resp.sendRedirect(authorizationUrl);
   }
 
@@ -214,25 +243,42 @@ public class sessionsTestServlet extends HttpServlet {
     resp.sendRedirect(authUrl);
   }
 
+  private void writeAccountConflictMessage(Document doc, RTFAccountException e) {
+    long originalRTFAcctId = e.getOriginalOwner().getAppEngineKeyLong();
+    long contestorRTFAcctId = e.getNewClaimant().getAppEngineKeyLong();
+    String apName = e.getContestedAPAccount().getProperty(AuthProviderAccount.AUTH_PROVIDER_NAME);
+    String apDetails = e.getContestedAPAccount().getDescription();
+
+    doc.body().appendElement("h2").appendText("Account Ownership Conflict").appendElement("br");
+    doc.body()
+        .appendText(
+            "The " + apName + " account you are trying to add to your RateThisFest account ID " + contestorRTFAcctId
+                + " is already being used by another RateThisFest user ID " + originalRTFAcctId + ".")
+        .appendElement("br").appendElement("br");
+    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME).appendText("Back To Home Page")
+        .appendElement("br");
+
+  }
+
   private void actionCallbackGoogleAuthScribe(HttpServletRequest req, HttpServletResponse resp, Document doc)
       throws JsonProcessingException, IOException {
-    String paramToken = req.getParameter("oauth_token");
-    String paramVerifier = req.getParameter("oauth_verifier");
+    String paramToken = req.getParameter(GOOGLE_PARAM_OAUTH_TOKEN);
+    String paramVerifier = req.getParameter(GOOGLE_PARAM_OAUTH_VERIFIER);
 
     Verifier verifier = new Verifier(paramVerifier);
 
-    OAuthRequest request = new OAuthRequest(Verb.GET, "https://www.googleapis.com/oauth2/v2/userinfo");
+    OAuthRequest request = new OAuthRequest(Verb.GET, GOOGLE_PROTECTED_URL_USERINFO);
 
     OAuthService service = new ServiceBuilder().provider(GoogleApi.class).apiKey(RTFServletConfig.GOOGLE_API_KEY)
         .apiSecret(RTFServletConfig.GOOGLE_API_SECRET).callback(RTFServletConfig.GOOGLE_USER_AUTH_CALLBACK_URL)
         .scope(RTFServletConfig.GOOGLE_OAUTH_REQ_SCOPE).build();
 
-    String reqToken = (String) req.getSession().getAttribute("requestToken");
-    String reqTokenSecret = (String) req.getSession().getAttribute("requestTokenSecret");
+    String reqToken = (String) req.getSession().getAttribute(GOOGLE_REDIRECT_REQUEST_TOKEN);
+    String reqTokenSecret = (String) req.getSession().getAttribute(GOOGLE_REDIRECT_REQUEST_TOKEN_SECRET);
     Token requestToken = new Token(reqToken, reqTokenSecret);
     Token accessToken = service.getAccessToken(requestToken, verifier);
     service.signRequest(accessToken, request);
-    request.addHeader("GData-Version", "3.0");
+    // request.addHeader("GData-Version", "3.0"); //TODO is this needed? Not sure. Seems like it's not.
     Response response = request.send();
     log.info(response.getCode() + "\r\n" + response.getBody());
 
@@ -254,20 +300,6 @@ public class sessionsTestServlet extends HttpServlet {
 
   }
 
-  private void writeAccountConflictMessage(Document doc, RTFAccountException e) {
-    long originalRTFAcctId = e.getOriginalOwner().getRTFAccountId();
-    long contestorRTFAcctId = e.getNewClaimant().getRTFAccountId();
-    String apName = e.getContestedAPAccount().getProperty(AuthProviderAccount.AUTH_PROVIDER_NAME);
-    String apDetails = e.getContestedAPAccount().getDescription();
-    
-    doc.body().appendElement("h2").appendText("Account Ownership Conflict").appendElement("br");
-    doc.body().appendText("The "+ apName + " account you are trying to add to your RateThisFest account ID "+ contestorRTFAcctId +
-        " is already being used by another RateThisFest user ID "+ originalRTFAcctId + ".").appendElement("br").appendElement("br");
-    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME).appendText("Back To Home Page").appendElement("br");
-   
-    
-  }
-
   private void actionCallbackFacebookAuthScribe(HttpServletRequest req, HttpServletResponse resp, Document doc)
       throws IOException, JsonProcessingException {
 
@@ -285,7 +317,7 @@ public class sessionsTestServlet extends HttpServlet {
     Token accessToken = service.getAccessToken(nullToken, verifier);
 
     // Now let's go and ask for a protected resource!
-    OAuthRequest request = new OAuthRequest(Verb.GET, "https://graph.facebook.com/me");
+    OAuthRequest request = new OAuthRequest(Verb.GET, FACEBOOK_PROTECTED_URL_USERINFO);
     service.signRequest(accessToken, request);
     Response response = request.send();
     int responseCode = response.getCode();
@@ -299,7 +331,7 @@ public class sessionsTestServlet extends HttpServlet {
       String id = newProviderAcct.getProperty(AuthProviderAccount.AUTH_PROVIDER_ID);
       String name = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_PERSON_NAME);
       String email = newProviderAcct.getProperty(AuthProviderAccount.LOGIN_EMAIL);
-      
+
       // doc.body().appendText("Got Facebook ID: " + id + " name: " + name + " email: " + email);
       resp.sendRedirect(RTFServletConfig.PATH_HOME);
     } catch (RTFAccountException e) {
@@ -312,14 +344,14 @@ public class sessionsTestServlet extends HttpServlet {
   private void actionCallbackTwitterAuth(HttpServletRequest req, HttpServletResponse resp, Document doc)
       throws IOException, JsonProcessingException {
     // User approved/cancelled twitter authorization of RateThisFest
-    Token token = new Token(req.getParameter("oauth_token"), req.getParameter("oauth_verifier"));
-    Verifier verifier = new Verifier(req.getParameter("oauth_verifier"));
+    Token token = new Token(req.getParameter(GOOGLE_PARAM_OAUTH_TOKEN), req.getParameter(GOOGLE_PARAM_OAUTH_VERIFIER));
+    Verifier verifier = new Verifier(req.getParameter(GOOGLE_PARAM_OAUTH_VERIFIER));
 
     OAuthService service = new ServiceBuilder().provider(TwitterApi.class).apiKey(RTFServletConfig.TWITTER_KEY)
         .apiSecret(RTFServletConfig.TWITTER_SECRET).callback(RTFServletConfig.TWITTER_REDIRECT_URL).build();
     Token accessToken = service.getAccessToken(token, verifier);
 
-    OAuthRequest request = new OAuthRequest(Verb.GET, "https://api.twitter.com/1.1/account/verify_credentials.json");
+    OAuthRequest request = new OAuthRequest(Verb.GET, TWITTER_PROTECTED_URL_USERINFO);
     service.signRequest(accessToken, request); // the access token from step 4
     Response response = request.send();
     log.info(response.getBody());
@@ -342,11 +374,12 @@ public class sessionsTestServlet extends HttpServlet {
 
   private void writeStartOverLink(Document doc) {
     doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME).appendText("Home Page").appendElement("br");
-    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME + "?RTFAction=logout")
+    doc.body().appendElement("a")
+        .attr("href", RTFServletConfig.PATH_HOME + "?" + PARAM_NAME_RTFACTION + "=" + ACTION_LOGOUT)
         .appendText("Wipe Login Data").appendElement("br");
     doc.body().appendElement("br").appendElement("a")
-        .attr("href", RTFServletConfig.PATH_HOME + "?RTFAction=destroyAccount").attr("align", "right")
-        .appendText("DESTROY MY RateThisFest ACCOUNT").appendElement("br");
+        .attr("href", RTFServletConfig.PATH_HOME + "?" + PARAM_NAME_RTFACTION + "=" + ACTION_DESTROY_ACCOUNT)
+        .attr("align", "right").appendText("DESTROY MY RateThisFest ACCOUNT").appendElement("br");
   }
 
   private void writeForm(Document doc) {
@@ -372,27 +405,21 @@ public class sessionsTestServlet extends HttpServlet {
   private void writeGoogleLoginButton(Document doc) {
     String urlToUse = RTFServletConfig.GOOGLE_USER_AUTH_START_URL;
     doc.body().appendElement("A").attr("href", urlToUse).appendElement("img")
-        .attr("src", "https://developers.google.com/accounts/images/sign-in-with-google.png").attr("border", "0")
-        .appendElement("br");
+        .attr("src", RTFServletConfig.IMAGE_URL_SIGNIN_GOOGLE).attr("border", "0").appendElement("br");
   }
 
   private void writeFacebookLoginButton(Document doc) {
     String urlToUseWhenYouClickOnTheFacebookButton = RTFServletConfig.FACEBOOK_USER_AUTH_SCRIBE_START_URL;
 
     doc.body().appendElement("A").attr("href", urlToUseWhenYouClickOnTheFacebookButton).appendElement("img")
-        .attr("src", "http://dragon.ak.fbcdn.net/hphotos-ak-ash3/851558_153968161448238_508278025_n.png")
-        .attr("border", "0").appendElement("br");
+        .attr("src", RTFServletConfig.IMAGE_URL_SIGNIN_FACEBOOK).attr("border", "0").appendElement("br");
+
   }
 
   private void writeTwitterLoginButton(Document doc) {
-    String urlToUse = RTFServletConfig.PATH_HOME + "?RTFAction=UserReqTwitterAuth";
-    doc.body()
-        .appendElement("A")
-        .attr("href", urlToUse)
-        .appendElement("img")
-        .attr("src",
-            "https://encrypted-tbn3.gstatic.com/images?q=tbn:ANd9GcSdYJnRQqyWHMkm9VgP_aHf0gc4wbREFiv0z72T_xVltn4vNWb9NA")
-        .attr("border", "0").appendElement("br");
+    String urlToUse = RTFServletConfig.PATH_HOME + "?" + PARAM_NAME_RTFACTION + "=" + ACTION_TWITTER_AUTH;
+    doc.body().appendElement("A").attr("href", urlToUse).appendElement("img")
+        .attr("src", RTFServletConfig.IMAGE_URL_SIGNIN_TWITTER).attr("border", "0").appendElement("br");
   }
 
   private void writeDebugInfo(HttpServletRequest req, Document doc) throws IOException {
@@ -437,8 +464,10 @@ public class sessionsTestServlet extends HttpServlet {
 
     RTFAccount currentLogin = LoginManager.getCurrentLogin(session);
     if (currentLogin != null) {
-      long rtfAccountId = currentLogin.getRTFAccountId();
-      doc.body().appendText("Logged in as RateThisFest Account#: " + rtfAccountId).appendElement("br");
+      long rtfAccountId = currentLogin.getAppEngineKeyLong();
+      String personName = currentLogin.getProperty(RTFAccount.PROPERTY_PERSON_NAME);
+      doc.body().appendText("Logged in as RateThisFest Account#: " + rtfAccountId + " Name: " + personName)
+          .appendElement("br");
 
       Collection<AuthProviderAccount> providerAccounts = currentLogin.getAPAccounts();
       for (AuthProviderAccount apAccount : providerAccounts) {
