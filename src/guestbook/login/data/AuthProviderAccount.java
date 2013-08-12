@@ -1,6 +1,7 @@
-package guestbook.login;
+package guestbook.login.data;
 
-import guestbook.RTFServletConfig;
+
+import guestbook.login.other.LoginType;
 
 import java.io.IOException;
 import java.io.Serializable;

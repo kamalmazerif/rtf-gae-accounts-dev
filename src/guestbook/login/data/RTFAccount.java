@@ -1,6 +1,8 @@
-package guestbook.login;
+package guestbook.login.data;
 
 import guestbook.FacebookReturnServlet;
+import guestbook.login.other.LoginType;
+import guestbook.login.other.RTFConstants;
 
 import java.io.Serializable;
 import java.util.ArrayList;

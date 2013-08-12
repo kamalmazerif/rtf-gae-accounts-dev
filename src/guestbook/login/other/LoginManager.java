@@ -1,6 +1,8 @@
-package guestbook.login;
+package guestbook.login.other;
 
 import guestbook.FacebookReturnServlet;
+import guestbook.login.data.AuthProviderAccount;
+import guestbook.login.data.RTFAccount;
 
 import java.util.ArrayList;
 import java.util.Collection;

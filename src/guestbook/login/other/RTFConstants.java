@@ -1,4 +1,4 @@
-package guestbook.login;
+package guestbook.login.other;
 
 public class RTFConstants {
   public static final String DATASTORE_KIND_ANCESTOR = "Ancestor";

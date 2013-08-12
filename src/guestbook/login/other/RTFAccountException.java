@@ -1,4 +1,7 @@
-package guestbook.login;
+package guestbook.login.other;
+
+import guestbook.login.data.AuthProviderAccount;
+import guestbook.login.data.RTFAccount;
 
 public class RTFAccountException extends Exception {
 

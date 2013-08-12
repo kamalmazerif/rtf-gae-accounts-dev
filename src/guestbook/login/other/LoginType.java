@@ -1,4 +1,4 @@
-package guestbook.login;
+package guestbook.login.other;
 
 public enum LoginType {
   FACEBOOK("Facebook"), GOOGLE("Google"), TWITTER("Twitter");
