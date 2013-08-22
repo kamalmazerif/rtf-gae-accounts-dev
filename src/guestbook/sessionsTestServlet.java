@@ -1,12 +1,5 @@
 package guestbook;
 
-import guestbook.login.RTFServletConfig;
-import guestbook.login.ServletInterface;
-import guestbook.login.data.AuthProviderAccount;
-import guestbook.login.data.RTFAccount;
-import guestbook.login.other.LoginManager;
-import guestbook.login.other.LoginType;
-import guestbook.login.other.RTFAccountException;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -36,6 +29,14 @@ import org.scribe.model.Verb;
 import org.scribe.model.Verifier;
 import org.scribe.oauth.OAuthService;
 
+import auth.logins.ServletConfig;
+import auth.logins.ServletInterface;
+import auth.logins.data.AuthProviderAccount;
+import auth.logins.data.MasterAccount;
+import auth.logins.other.LoginManager;
+import auth.logins.other.LoginType;
+import auth.logins.other.RTFAccountException;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 
 public class sessionsTestServlet extends HttpServlet {
@@ -62,7 +63,7 @@ public class sessionsTestServlet extends HttpServlet {
 
     writeDebugInfo(req, doc);
 
-    RTFAccount currentLogin = LoginManager.getCurrentLogin(session);
+    MasterAccount currentLogin = LoginManager.getCurrentLogin(session);
     if (currentLogin == null) {
       writeGoogleLoginButton(doc);
       writeFacebookLoginButton(doc);
@@ -84,7 +85,11 @@ public class sessionsTestServlet extends HttpServlet {
 
     
     try {
-      ServletInterface.libraryHandleRTFAction(req, resp, session, doc);
+      String redirectStr = ServletInterface.libraryHandleRTFAction(session, req.getParameterMap());
+      if (redirectStr != null) {
+        //Redirect string is null if there was no action requiring a redirect or reload
+      resp.sendRedirect(redirectStr);
+      }
     } catch (RTFAccountException e) {
       // TODO Auto-generated catch block
       e.printStackTrace();
@@ -123,7 +128,7 @@ public class sessionsTestServlet extends HttpServlet {
 
     doc.body().appendText("Done");
     outWriter.write(doc.toString());
-    resp.sendRedirect(RTFServletConfig.PATH_HOME);
+    resp.sendRedirect(ServletConfig.PATH_HOME);
   }
 
 
@@ -139,24 +144,24 @@ public class sessionsTestServlet extends HttpServlet {
             "The " + apName + " account you are trying to add to your RateThisFest account ID " + contestorRTFAcctId
                 + " is already being used by another RateThisFest user ID " + originalRTFAcctId + ".")
         .appendElement("br").appendElement("br");
-    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME).appendText("Back To Home Page")
+    doc.body().appendElement("a").attr("href", ServletConfig.PATH_HOME).appendText("Back To Home Page")
         .appendElement("br");
   }
 
 
   private void writeStartOverLink(Document doc) {
-    doc.body().appendElement("a").attr("href", RTFServletConfig.PATH_HOME).appendText("Home Page").appendElement("br");
+    doc.body().appendElement("a").attr("href", ServletConfig.PATH_HOME).appendText("Home Page").appendElement("br");
     doc.body().appendElement("a")
-        .attr("href", RTFServletConfig.PATH_HOME + "?" + ServletInterface.PARAM_NAME_RTFACTION + "=" + ServletInterface.ACTION_LOGOUT)
+        .attr("href", ServletConfig.PATH_HOME + "?" + ServletInterface.PARAM_NAME_RTFACTION + "=" + ServletInterface.ACTION_LOGOUT)
         .appendText("Wipe Login Data").appendElement("br");
     doc.body().appendElement("br").appendElement("a")
-        .attr("href", RTFServletConfig.PATH_HOME + "?" + ServletInterface.PARAM_NAME_RTFACTION + "=" + ServletInterface.ACTION_DESTROY_ACCOUNT)
+        .attr("href", ServletConfig.PATH_HOME + "?" + ServletInterface.PARAM_NAME_RTFACTION + "=" + ServletInterface.ACTION_DESTROY_ACCOUNT)
         .attr("align", "right").appendText("DESTROY MY RateThisFest ACCOUNT").appendElement("br");
   }
 
   private void writeForm(Document doc) {
     // <form action="/sign" method="post">
-    Element formElement = doc.body().appendElement("form").attr("action", RTFServletConfig.PATH_HOME)
+    Element formElement = doc.body().appendElement("form").attr("action", ServletConfig.PATH_HOME)
         .attr("method", "post");
 
     // <div><textarea name="content" rows="3" cols="60"></textarea></div>
@@ -175,13 +180,13 @@ public class sessionsTestServlet extends HttpServlet {
   }
 
   private void writeGoogleLoginButton(Document doc) {
-    String urlToUse = RTFServletConfig.GOOGLE_USER_AUTH_START_URL;
+    String urlToUse = ServletConfig.GOOGLE_USER_AUTH_START_URL;
     doc.body().appendElement("A").attr("href", urlToUse).appendElement("img")
         .attr("src", sessionsTestServlet.IMAGE_URL_SIGNIN_GOOGLE).attr("border", "0").appendElement("br");
   }
 
   private void writeFacebookLoginButton(Document doc) {
-    String urlToUseWhenYouClickOnTheFacebookButton = RTFServletConfig.FACEBOOK_USER_AUTH_SCRIBE_START_URL;
+    String urlToUseWhenYouClickOnTheFacebookButton = ServletConfig.FACEBOOK_USER_AUTH_SCRIBE_START_URL;
 
     doc.body().appendElement("A").attr("href", urlToUseWhenYouClickOnTheFacebookButton).appendElement("img")
         .attr("src", sessionsTestServlet.IMAGE_URL_SIGNIN_FACEBOOK).attr("border", "0").appendElement("br");
@@ -189,7 +194,7 @@ public class sessionsTestServlet extends HttpServlet {
   }
 
   private void writeTwitterLoginButton(Document doc) {
-    String urlToUse = RTFServletConfig.PATH_HOME + "?" + ServletInterface.PARAM_NAME_RTFACTION + "=" + ServletInterface.ACTION_TWITTER_AUTH;
+    String urlToUse = ServletConfig.PATH_HOME + "?" + ServletInterface.PARAM_NAME_RTFACTION + "=" + ServletInterface.ACTION_TWITTER_AUTH;
     doc.body().appendElement("A").attr("href", urlToUse).appendElement("img")
         .attr("src", sessionsTestServlet.IMAGE_URL_SIGNIN_TWITTER).attr("border", "0").appendElement("br");
   }
@@ -234,10 +239,10 @@ public class sessionsTestServlet extends HttpServlet {
       doc.body().appendText(parameter + " = " + parameters.get(parameter)[0]).appendElement("br");
     }
 
-    RTFAccount currentLogin = LoginManager.getCurrentLogin(session);
+    MasterAccount currentLogin = LoginManager.getCurrentLogin(session);
     if (currentLogin != null) {
       long rtfAccountId = currentLogin.getAppEngineKeyLong();
-      String personName = currentLogin.getProperty(RTFAccount.PROPERTY_PERSON_NAME);
+      String personName = currentLogin.getProperty(MasterAccount.PROPERTY_PERSON_NAME);
       doc.body().appendText("Logged in as RateThisFest Account#: " + rtfAccountId + " Name: " + personName)
           .appendElement("br");
 

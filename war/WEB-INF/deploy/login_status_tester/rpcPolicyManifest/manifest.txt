@@ -1,0 +1,3 @@
+# Module login_status_tester
+# RPC service class, partial path of RPC policy file
+guestbook.login.client.LoginStatusService, 387FCCE3E689FDF2772EA1518DB54FA1.gwt.rpc

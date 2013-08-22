@@ -1,0 +1,2 @@
+serviceClass: guestbook.login.client.LoginStatusService
+path: 387FCCE3E689FDF2772EA1518DB54FA1.gwt.rpc
